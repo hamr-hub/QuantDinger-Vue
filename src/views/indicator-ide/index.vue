@@ -1562,8 +1562,17 @@ export default {
     async loadMarketModules () {
       const options = await loadEnabledMarketOptions({ includeFeatures: ['research'] })
       this.ideAddMarketKeys = options.map(item => item.value)
+      // Prepend the "ALL" mixed-search tab when at least two of US/CN/HK are
+      // visible (mirrors the ai-analysis picker UX).
+      const visible = new Set(this.ideAddMarketKeys)
+      const mixedCount = ['USStock', 'CNStock', 'HKStock'].filter(m => visible.has(m)).length
+      if (mixedCount >= 2 && !this.ideAddMarketKeys.includes('ALL')) {
+        this.ideAddMarketKeys = ['ALL', ...this.ideAddMarketKeys]
+      }
       if (!this.ideAddMarketKeys.includes(this.addMarketTab)) {
-        this.addMarketTab = firstMarketValue(options)
+        this.addMarketTab = this.ideAddMarketKeys.includes('ALL')
+          ? 'ALL'
+          : firstMarketValue(options)
       }
       if (!this.ideAddMarketKeys.includes(this.market)) {
         this.market = this.addMarketTab || firstMarketValue(options)
@@ -3823,12 +3832,14 @@ export default {
       if (!this.addSearchKeyword) return
       this.addSearching = true
       try {
+        // Mixed-search tab: market="ALL" → backend round-robin across US/CN/HK.
+        const apiMarket = this.addMarketTab === 'ALL' ? 'ALL' : this.addMarketTab
         const res = await searchSymbols({
-          market: this.addMarketTab,
+          market: apiMarket,
           keyword: this.addSearchKeyword,
-          limit: 20,
-          exchange_id: this.addMarketTab === 'Crypto' ? this.cryptoExchangeId : undefined,
-          market_type: this.addMarketTab === 'Crypto' ? this.cryptoMarketType : undefined
+          limit: apiMarket === 'ALL' ? 24 : 20,
+          exchange_id: apiMarket === 'Crypto' ? this.cryptoExchangeId : undefined,
+          market_type: apiMarket === 'Crypto' ? this.cryptoMarketType : undefined
         })
         if (res && res.data && Array.isArray(res.data)) {
           this.addSearchResults = res.data

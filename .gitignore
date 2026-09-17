@@ -35,3 +35,7 @@ package-lock.json
 /screenshots/
 /playwright-report/
 /test-results/
+# macOS
+.DS_Store
+**/._.DS_Store
+._.DS_Store

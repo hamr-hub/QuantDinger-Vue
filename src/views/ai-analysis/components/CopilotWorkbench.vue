@@ -493,6 +493,11 @@
     >
       <div class="add-watch-modal">
         <a-tabs v-model="addWatchMarket" @change="handleAddWatchMarketChange">
+          <a-tab-pane
+            v-if="showAddWatchAllTab"
+            key="ALL"
+            :tab="$t('dashboard.analysis.market.ALL', 'All Markets')"
+          />
           <a-tab-pane v-for="market in markets" :key="market.value" :tab="marketLabel(market.value)" />
         </a-tabs>
         <a-input-search
@@ -500,12 +505,23 @@
           size="large"
           allow-clear
           :loading="addWatchSearching"
-          :placeholder="text.addWatchSearchPlaceholder"
+          :placeholder="addWatchMarket === 'ALL' ? $t('dashboard.analysis.modal.addStock.example.ALL', 'Mixed: search across US/CN/HK, e.g. AAPL, 600519, 00700') : text.addWatchSearchPlaceholder"
           @search="handleAddWatchSearch"
           @change="handleAddWatchKeywordChange"
         >
           <a-button slot="enterButton" type="primary" icon="search">{{ text.search }}</a-button>
         </a-input-search>
+
+        <div v-if="addWatchMarket === 'ALL' && addWatchOfflineStatus && addWatchOfflineStatus.available" class="add-watch-offline-badge">
+          <a-icon type="database" style="color: #52c41a; margin-right: 4px;" />
+          <span>
+            {{ $t('dashboard.analysis.modal.addStock.offlineBadge', 'Offline T+1 dataset ready') }}:
+            {{ (addWatchOfflineStatus.files && addWatchOfflineStatus.files.stock_basic) || 0 }}
+            {{ $t('dashboard.analysis.modal.addStock.universe', 'symbols') }},
+            {{ (addWatchOfflineStatus.files && addWatchOfflineStatus.files.stk_factor) || 0 }}
+            {{ $t('dashboard.analysis.modal.addStock.dailyBars', 'daily bars') }}
+          </span>
+        </div>
 
         <div class="add-watch-results">
           <div v-if="addWatchSearching" class="empty-mini">{{ text.loading }}</div>
@@ -676,6 +692,7 @@ import {
   removeWatchlist,
   searchSymbols,
   getHotSymbols,
+  getOfflineStatus,
   getAgentPreflight,
   classifyAgentIntent,
   getAiSkills,
@@ -762,6 +779,8 @@ export default {
       addWatchSearching: false,
       addWatchSearchTimer: null,
       addWatchSearchSeq: 0,
+      addWatchOfflineStatus: null,
+      addWatchOfflineLoading: false,
       monitors: [],
       loadingMonitors: false,
       analyzingSymbol: false,
@@ -804,6 +823,14 @@ export default {
     isZh () {
       const locale = this.$i18n ? String(this.$i18n.locale || '') : 'zh-CN'
       return locale.toLowerCase().startsWith('zh')
+    },
+    showAddWatchAllTab () {
+      const visible = new Set((this.markets || []).map(item => item.value))
+      let count = 0
+      if (visible.has('USStock')) count++
+      if (visible.has('CNStock')) count++
+      if (visible.has('HKStock')) count++
+      return count >= 2
     },
     text () {
       const t = (key, fallback, values) => this.i18nText(`aiAssetAnalysis.copilot.${key}`, fallback, values)
@@ -1777,10 +1804,13 @@ export default {
       const marketValues = this.markets.map(item => item.value)
       this.addWatchMarket = marketValues.includes(this.context.market)
         ? this.context.market
-        : (marketValues.includes(this.addWatchMarket) ? this.addWatchMarket : firstMarketValue(this.markets, 'USStock'))
+        : (this.showAddWatchAllTab
+          ? 'ALL'
+          : (marketValues.includes(this.addWatchMarket) ? this.addWatchMarket : firstMarketValue(this.markets, 'USStock')))
       this.addWatchKeyword = ''
       this.addWatchSelected = null
       await this.loadAddWatchHotSymbols()
+      this.loadAddWatchOfflineStatus()
     },
     closeAddWatchModal () {
       this.addWatchModalVisible = false
@@ -1824,15 +1854,16 @@ export default {
       const market = this.addWatchMarket
       this.addWatchSearching = true
       try {
-        const res = await getHotSymbols({ market, limit: 10 })
+        const apiMarket = market === 'ALL' ? 'ALL' : market
+        const res = await getHotSymbols({ market: apiMarket, limit: apiMarket === 'ALL' ? 12 : 10 })
         if (seq !== this.addWatchSearchSeq || market !== this.addWatchMarket) return
         const data = res.data || {}
         const list = Array.isArray(data) ? data : (data.results || data.symbols || data.items || [])
         const normalized = list.map(x => this.normalizeSymbolOption({ ...x, market: x.market || market })).filter(Boolean)
-        this.addWatchResults = mergeWatchlistSuggestions(market, normalized)
+        this.addWatchResults = apiMarket === 'ALL' ? normalized : mergeWatchlistSuggestions(market, normalized)
       } catch (_) {
         if (seq !== this.addWatchSearchSeq || market !== this.addWatchMarket) return
-        this.addWatchResults = mergeWatchlistSuggestions(market)
+        this.addWatchResults = market === 'ALL' ? [] : mergeWatchlistSuggestions(market)
       } finally {
         if (seq === this.addWatchSearchSeq && market === this.addWatchMarket) {
           this.addWatchSearching = false
@@ -1850,12 +1881,13 @@ export default {
       this.addWatchSearching = true
       this.addWatchSelected = null
       try {
-        const res = await searchSymbols({ market, keyword: kw, limit: 16 })
+        const apiMarket = market === 'ALL' ? 'ALL' : market
+        const res = await searchSymbols({ market: apiMarket, keyword: kw, limit: apiMarket === 'ALL' ? 24 : 16 })
         if (seq !== this.addWatchSearchSeq || market !== this.addWatchMarket || kw !== this.addWatchKeyword.trim()) return
         const data = res.data || {}
         const list = Array.isArray(data) ? data : (data.results || data.symbols || data.items || [])
         const normalized = list.map(x => this.normalizeSymbolOption({ ...x, market: x.market || market })).filter(Boolean)
-        this.addWatchResults = normalized.length ? normalized : this.manualAddWatchFallback(market, kw)
+        this.addWatchResults = normalized.length ? normalized : this.manualAddWatchFallback(apiMarket, kw)
       } catch (_) {
         if (seq !== this.addWatchSearchSeq || market !== this.addWatchMarket || kw !== this.addWatchKeyword.trim()) return
         this.addWatchResults = this.manualAddWatchFallback(market, kw)
@@ -1869,6 +1901,20 @@ export default {
       const manualMarkets = ['Crypto', 'Forex', 'Futures', 'MOEX']
       if (!manualMarkets.includes(market)) return []
       return [{ market, symbol: String(keyword || '').trim().toUpperCase(), name: '' }]
+    },
+    async loadAddWatchOfflineStatus () {
+      if (this.addWatchOfflineLoading || this.addWatchOfflineStatus) return
+      this.addWatchOfflineLoading = true
+      try {
+        const res = await getOfflineStatus()
+        if (res && res.code === 1 && res.data) {
+          this.addWatchOfflineStatus = res.data
+        }
+      } catch (e) {
+        // Silent — the badge is purely informational.
+      } finally {
+        this.addWatchOfflineLoading = false
+      }
     },
     selectAddWatchSymbol (item) {
       this.addWatchSelected = this.normalizeSymbolOption(item)
@@ -6611,6 +6657,18 @@ export default {
   .ant-tabs-bar {
     margin-bottom: 14px;
   }
+}
+
+.add-watch-offline-badge {
+  margin-top: 12px;
+  padding: 6px 10px;
+  background: rgba(82, 196, 26, 0.08);
+  border: 1px solid rgba(82, 196, 26, 0.32);
+  border-radius: 4px;
+  font-size: 12px;
+  color: #389e0d;
+  display: inline-flex;
+  align-items: center;
 }
 
 .add-watch-results {

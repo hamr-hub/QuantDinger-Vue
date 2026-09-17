@@ -30,7 +30,12 @@ const marketApi = {
   GetMarketTypes: '/api/market/types',
   // Symbol search
   SearchSymbols: '/api/market/symbols/search',
-  GetHotSymbols: '/api/market/symbols/hot'
+  GetHotSymbols: '/api/market/symbols/hot',
+  // Company info (A股/港股 adaptation 2026-07-02)
+  CompanyProfile: '/api/company/profile',
+  CompanyFundamentals: '/api/company/fundamentals',
+  CompanyFull: '/api/company/full',
+  OfflineStatus: '/api/company/offline-status'
 }
 
 export function getWatchlist (parameter) {
@@ -318,5 +323,39 @@ export function getHotSymbols (parameter) {
     url: marketApi.GetHotSymbols,
     method: 'get',
     params: parameter
+  })
+}
+
+// Company info endpoints (added 2026-07-02 for the A股/港股 adaptation).
+// For A股 these read straight from the offline T+1 dataset (instant).
+// For HK they fall back to Tencent quote + AkShare Eastmoney.
+export function getCompanyProfile (parameter) {
+  return request({
+    url: marketApi.CompanyProfile,
+    method: 'get',
+    params: parameter
+  })
+}
+
+export function getCompanyFundamentals (parameter) {
+  return request({
+    url: marketApi.CompanyFundamentals,
+    method: 'get',
+    params: parameter
+  })
+}
+
+export function getCompanyFull (parameter) {
+  return request({
+    url: marketApi.CompanyFull,
+    method: 'get',
+    params: parameter
+  })
+}
+
+export function getOfflineStatus () {
+  return request({
+    url: marketApi.OfflineStatus,
+    method: 'get'
   })
 }
